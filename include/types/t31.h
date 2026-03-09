@@ -8,16 +8,18 @@ namespace types {
 //  0: double[1]
 //  8: int32[3]
 // 20: char[12]
-struct T31_block32 {
+struct Block32 {
     double d0;
     std::array<int32_t, 3> i;
     std::array<uint8_t, 12> c;
 
-    T31_block32() : d0(0.0), i(), c() {}
+    Block32() : d0(0.0), i(), c() {}
 };
 
 // 你描述的那种结构（272起始 10个block，后面还有592/628/668/672等）
 struct T31 {
+    std::array<uint8_t, 80> off_8_c80;    // 8,   len=80, char[80]
+    
     std::array<double, 3>  off_88_d3;     // 88,  len=24
     std::array<int32_t, 2> off_112_i2;    // 112, len=8
     double                 off_120_d1;    // 120, len=8
@@ -43,7 +45,8 @@ struct T31 {
     std::array<int8_t, 4>   off_672_i8_4; // 672, int8[4]（注意越界问题）
 
     T31()
-        : off_88_d3()
+        : off_8_c80()
+        , off_88_d3()
         , off_112_i2()
         , off_120_d1(0.0)
         , off_128_i3()

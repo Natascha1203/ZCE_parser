@@ -27,6 +27,12 @@ bool parseT31(const uint8_t* data, size_t len, types::T31* out) {
         return true;
     };
 
+    // 8: char[80]
+    if (!common::read_bytes(data, len, 8, out->off_8_c80.data(), out->off_8_c80.size())) {
+        warn_oob("off_8_c80", 8, 80, len);
+        return false;
+    }
+
     // 88: double[3]
     if (!rd_double_n(88, out->off_88_d3.data(), out->off_88_d3.size())) {
         warn_oob("off_88_d3", 88, 24, len);
@@ -123,7 +129,7 @@ bool parseT31(const uint8_t* data, size_t len, types::T31* out) {
     }
 
     // 672: int8[4]（如果 len==672 会越界）
-    // 这里按“尽量解析”策略：越界就把该字段置0，不报错退出
+    // 这里按"尽量解析"策略：越界就把该字段置0，不报错退出
     {
         uint8_t tmp[4] = {0, 0, 0, 0};
         if (common::read_bytes(data, len, 672, tmp, 4)) {

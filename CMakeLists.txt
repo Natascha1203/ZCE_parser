@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 2.8)
 project(cppParser CXX)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11 -O2")
 
@@ -12,4 +12,6 @@ add_executable(cppParser
     src/parser.cpp
     src/t31_parser.cpp
     src/t36_parser.cpp
+    src/detector/packet_detector.cpp
+    src/batch/batch_parser.cpp
 )
