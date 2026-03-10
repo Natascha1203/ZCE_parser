@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <cstring>
+#include <sstream>
 
 #include "parser/parser.h"
 #include "common/print.h"
@@ -21,119 +22,109 @@ static bool read_file_all(const char* path, std::vector<uint8_t>& out) {
     return static_cast<bool>(ifs.read(reinterpret_cast<char*>(out.data()), n));
 }
 
-static void print_t31(const types::T31& q, std::ostream& out) {
-    out << "===== T31 Parse Result =====\n\n";
-
-    // 8: char[80]
-    out << "off_8_c80 (char[80]):\n  \"" 
-        << common::bytes_to_ascii_printable(q.off_8_c80.data(), q.off_8_c80.size()) 
-        << "\"\n\n";
-
-    // 88: double[3]
-    out << "off_88_d3 (double[3]):\n  ";
-    for (size_t i = 0; i < q.off_88_d3.size(); ++i) {
-        out << q.off_88_d3[i];
-        if (i < q.off_88_d3.size() - 1) out << ", ";
+// 从字节数组中提取字符串（去除尾部的0和不可打印字符）
+static std::string extract_string(const uint8_t* data, size_t len) {
+    std::string result;
+    for (size_t i = 0; i < len; ++i) {
+        if (data[i] == 0) break;
+        if (data[i] >= 32 && data[i] <= 126) {
+            result += static_cast<char>(data[i]);
+        }
     }
-    out << "\n\n";
+    return result;
+}
 
-    // 112: int[2]
-    out << "off_112_i2 (int32[2]):\n  ";
-    for (size_t i = 0; i < q.off_112_i2.size(); ++i) {
-        out << q.off_112_i2[i];
-        if (i < q.off_112_i2.size() - 1) out << ", ";
-    }
-    out << "\n\n";
-
-    // 120: double[1]
-    out << "off_120_d1 (double):\n  " << q.off_120_d1 << "\n\n";
-
-    // 128: int[3]
-    out << "off_128_i3 (int32[3]):\n  ";
-    for (size_t i = 0; i < q.off_128_i3.size(); ++i) {
-        out << q.off_128_i3[i];
-        if (i < q.off_128_i3.size() - 1) out << ", ";
-    }
-    out << "\n\n";
-
-    // 140: double[8]
-    out << "off_140_d8 (double[8]):\n  ";
-    for (size_t i = 0; i < q.off_140_d8.size(); ++i) {
-        out << q.off_140_d8[i];
-        if (i < q.off_140_d8.size() - 1) out << ", ";
-    }
-    out << "\n\n";
-
-    // 204: int[2]
-    out << "off_204_i2 (int32[2]):\n  ";
-    for (size_t i = 0; i < q.off_204_i2.size(); ++i) {
-        out << q.off_204_i2[i];
-        if (i < q.off_204_i2.size() - 1) out << ", ";
-    }
-    out << "\n\n";
-
-    // 212: double[1]
-    out << "off_212_d1 (double):\n  " << q.off_212_d1 << "\n\n";
-
-    // 220: int[2]
-    out << "off_220_i2 (int32[2]):\n  ";
-    for (size_t i = 0; i < q.off_220_i2.size(); ++i) {
-        out << q.off_220_i2[i];
-        if (i < q.off_220_i2.size() - 1) out << ", ";
-    }
-    out << "\n\n";
-
-    // 228: double[1]
-    out << "off_228_d1 (double):\n  " << q.off_228_d1 << "\n\n";
-
-    // 236: char[16]
-    out << "off_236_c16 (char[16]):\n  \"" 
-        << common::bytes_to_ascii_printable(q.off_236_c16.data(), q.off_236_c16.size()) 
-        << "\"\n\n";
-
-    // 252: double[2]
-    out << "off_252_d2 (double[2]):\n  ";
-    for (size_t i = 0; i < q.off_252_d2.size(); ++i) {
-        out << q.off_252_d2[i];
-        if (i < q.off_252_d2.size() - 1) out << ", ";
-    }
-    out << "\n\n";
-
-    // 268: int[1]
-    out << "off_268_i1 (int32):\n  " << q.off_268_i1 << "\n\n";
-
-    // 272: 10 blocks
-    out << "off_272_blocks (Block32[10]):\n";
-    for (size_t k = 0; k < q.off_272_blocks.size(); ++k) {
-        const auto& b = q.off_272_blocks[k];
-        out << "  [" << k << "] d0=" << b.d0
-            << ", i=[" << b.i[0] << ", " << b.i[1] << ", " << b.i[2] << "]"
-            << ", c=\"" << common::bytes_to_ascii_printable(b.c.data(), b.c.size()) << "\"\n";
+// 写入 CSV 头部
+static void write_csv_header(std::ostream& out, int max_price_num) {
+    out << "tradingDay,instrumentId,preClosePrice,preSettlementPrice,lastPrice,"
+        << "volume,turnover,preOpenInterest,openInterest,openPrice,"
+        << "highPrice,lowPrice,upperLimitPrice,lowerLimitPrice,closePrice,"
+        << "settlementPrice,actionDay,updateTime,updateMillisec,priceNum";
+    
+    // 动态添加 price 列
+    for (int i = 1; i <= max_price_num; ++i) {
+        out << ",price" << i << ",value" << i << "A,value" << i << "B,direct" << i;
     }
     out << "\n";
+}
 
-    // 592: char[36]
-    out << "off_592_c36 (char[36]):\n  \"" 
-        << common::bytes_to_ascii_printable(q.off_592_c36.data(), q.off_592_c36.size()) 
-        << "\"\n\n";
-
-    // 628: double[5]
-    out << "off_628_d5 (double[5]):\n  ";
-    for (size_t i = 0; i < q.off_628_d5.size(); ++i) {
-        out << q.off_628_d5[i];
-        if (i < q.off_628_d5.size() - 1) out << ", ";
+// 将 T31 数据写入 CSV 行
+static void write_csv_row(std::ostream& out, const types::T31& q) {
+    out << std::setprecision(17);
+    
+    // tradingDay (从 off_8_c80 提取)
+    out << extract_string(q.off_8_c80.data(), q.off_8_c80.size()) << ",";
+    
+    // instrumentId (从 off_8_c80 提取，这里假设和 tradingDay 相同，实际可能需要不同的偏移)
+    out << extract_string(q.off_8_c80.data(), q.off_8_c80.size()) << ",";
+    
+    // preClosePrice
+    out << q.off_140_d8[6] << ",";
+    
+    // preSettlementPrice
+    out << q.off_140_d8[5] << ",";
+    
+    // lastPrice
+    out << q.off_140_d8[7] << ",";
+    
+    // volume
+    out << q.off_128_i3[2] << ",";
+    
+    // turnover
+    out << q.off_120_d1 << ",";
+    
+    // preOpenInterest
+    out << q.off_128_i3[0] << ",";
+    
+    // openInterest
+    out << q.off_128_i3[1] << ",";
+    
+    // openPrice
+    out << q.off_252_d2[0] << ",";
+    
+    // highPrice
+    out << q.off_88_d3[1] << ",";
+    
+    // lowPrice
+    out << q.off_88_d3[2] << ",";
+    
+    // upperLimitPrice
+    out << q.off_140_d8[3] << ",";
+    
+    // lowerLimitPrice
+    out << q.off_140_d8[4] << ",";
+    
+    // closePrice
+    out << q.off_140_d8[0] << ",";
+    
+    // settlementPrice
+    out << q.off_252_d2[1] << ",";
+    
+    // actionDay (从 off_8_c80 提取)
+    out << extract_string(q.off_8_c80.data(), q.off_8_c80.size()) << ",";
+    
+    // updateTime (从 off_236_c16 提取)
+    out << extract_string(q.off_236_c16.data(), q.off_236_c16.size()) << ",";
+    
+    // updateMillisec (从 off_236_c16 提取)
+    out << extract_string(q.off_236_c16.data(), q.off_236_c16.size()) << ",";
+    
+    // priceNum
+    int price_num = q.off_268_i1;
+    out << price_num;
+    
+    // 动态输出 price 数据
+    int max_blocks = static_cast<int>(q.off_272_blocks.size());
+    if (price_num > max_blocks) price_num = max_blocks;
+    
+    for (int i = 0; i < price_num; ++i) {
+        const auto& block = q.off_272_blocks[i];
+        out << "," << block.d0;           // priceX
+        out << "," << block.i[0];         // valueXA
+        out << "," << block.i[1];         // valueXB
+        out << "," << block.i[2];         // directX
     }
-    out << "\n\n";
-
-    // 668: int[1]
-    out << "off_668_i1 (int32):\n  " << q.off_668_i1 << "\n\n";
-
-    // 672: int8[4]
-    out << "off_672_i8_4 (int8[4]):\n  ";
-    for (size_t i = 0; i < q.off_672_i8_4.size(); ++i) {
-        out << static_cast<int>(q.off_672_i8_4[i]);
-        if (i < q.off_672_i8_4.size() - 1) out << ", ";
-    }
+    
     out << "\n";
 }
 
@@ -151,21 +142,25 @@ static int manual_mode(const char* input_file, const char* output_file) {
         return 2;
     }
 
-    // 输出到文件或控制台
-    if (output_file) {
-        std::ofstream ofs(output_file);
-        if (!ofs) {
-            std::cerr << "Failed to open output file: " << output_file << "\n";
-            return 3;
-        }
-        ofs << std::setprecision(17);
-        print_t31(q, ofs);
-        std::cout << "Output written to: " << output_file << "\n";
-    } else {
-        std::cout << std::setprecision(17);
-        print_t31(q, std::cout);
+    if (!output_file) {
+        std::cerr << "Error: Output file is required for CSV mode\n";
+        return 3;
     }
 
+    std::ofstream ofs(output_file);
+    if (!ofs) {
+        std::cerr << "Failed to open output file: " << output_file << "\n";
+        return 3;
+    }
+
+    // 写入 CSV
+    int max_price_num = q.off_268_i1;
+    if (max_price_num > 10) max_price_num = 10;
+    
+    write_csv_header(ofs, max_price_num);
+    write_csv_row(ofs, q);
+    
+    std::cout << "CSV output written to: " << output_file << "\n";
     return 0;
 }
 
@@ -191,55 +186,51 @@ static int auto_mode(const char* input_file, const char* output_file) {
     std::cout << "\n========================================\n";
     std::cout << "Total: " << results.size() << " packet(s) parsed successfully\n\n";
 
-    // 输出结果
-    if (output_file) {
-        std::ofstream ofs(output_file);
-        if (!ofs) {
-            std::cerr << "Failed to open output file: " << output_file << "\n";
-            return 3;
+    if (!output_file) {
+        std::cerr << "Error: Output file is required for CSV mode\n";
+        return 3;
+    }
+
+    std::ofstream ofs(output_file);
+    if (!ofs) {
+        std::cerr << "Failed to open output file: " << output_file << "\n";
+        return 3;
+    }
+
+    // 找出最大的 priceNum
+    int max_price_num = 0;
+    for (const auto& res : results) {
+        if (res.success) {
+            int pn = res.t31_data.off_268_i1;
+            if (pn > max_price_num) max_price_num = pn;
         }
-        ofs << std::setprecision(17);
-        
-        for (size_t i = 0; i < results.size(); ++i) {
-            const auto& res = results[i];
-            if (res.success) {
-                ofs << "========================================\n";
-                ofs << "Packet #" << (i + 1) << " at offset " << res.offset << "\n";
-                ofs << "========================================\n\n";
-                print_t31(res.t31_data, ofs);
-                ofs << "\n\n";
-            }
-        }
-        std::cout << "Output written to: " << output_file << "\n";
-    } else {
-        std::cout << std::setprecision(17);
-        for (size_t i = 0; i < results.size(); ++i) {
-            const auto& res = results[i];
-            if (res.success) {
-                std::cout << "========================================\n";
-                std::cout << "Packet #" << (i + 1) << " at offset " << res.offset << "\n";
-                std::cout << "========================================\n\n";
-                print_t31(res.t31_data, std::cout);
-                std::cout << "\n\n";
-            }
+    }
+    if (max_price_num > 10) max_price_num = 10;
+
+    // 写入 CSV 头部
+    write_csv_header(ofs, max_price_num);
+
+    // 写入每一行数据
+    for (const auto& res : results) {
+        if (res.success) {
+            write_csv_row(ofs, res.t31_data);
         }
     }
 
+    std::cout << "CSV output written to: " << output_file << "\n";
     return 0;
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
+    if (argc < 3) {
         std::cerr << "Usage:\n";
-        std::cerr << "  Manual mode:  " << argv[0] << " <data.bin> [output.txt]\n";
-        std::cerr << "  Auto mode:    " << argv[0] << " -a <data.bin> [output.txt]\n";
+        std::cerr << "  Manual mode:  " << argv[0] << " <data.bin> <output.csv>\n";
+        std::cerr << "  Auto mode:    " << argv[0] << " -a <data.bin> <output.csv>\n";
         std::cerr << "\nOptions:\n";
         std::cerr << "  -a, --auto    Auto-detect mode (search for T31 packets with signature validation)\n";
         std::cerr << "\nExamples:\n";
-        std::cerr << "  " << argv[0] << " data.bin              # Manual mode, output to console\n";
-        std::cerr << "  " << argv[0] << " data.bin out.txt      # Manual mode, output to file\n";
-        std::cerr << "  " << argv[0] << " -a data.bin           # Auto mode, output to console\n";
-        std::cerr << "  " << argv[0] << " -a data.bin out.txt   # Auto mode, output to file\n";
+        std::cerr << "  " << argv[0] << " data.bin output.csv       # Manual mode\n";
+        std::cerr << "  " << argv[0] << " -a data.bin output.csv    # Auto mode\n";
         return 1;
     }
 
@@ -251,14 +242,14 @@ int main(int argc, char** argv) {
         auto_detect = true;
         file_arg_idx = 2;
         
-        if (argc < 3) {
-            std::cerr << "Error: Missing input file\n";
+        if (argc < 4) {
+            std::cerr << "Error: Missing input file or output file\n";
             return 1;
         }
     }
 
     const char* input_file = argv[file_arg_idx];
-    const char* output_file = (argc > file_arg_idx + 1) ? argv[file_arg_idx + 1] : nullptr;
+    const char* output_file = argv[file_arg_idx + 1];
 
     if (auto_detect) {
         return auto_mode(input_file, output_file);
