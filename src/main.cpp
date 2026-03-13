@@ -5,8 +5,80 @@
 #include <string>
 #include <cstring>
 #include <sstream>
+#include <cstdio>
 
+#include <cmath>
 #include "parser/parser.h"
+
+// 写入浮点数：整数显示为 x.0，非整数显示高精度
+static void write_float(std::ostream& out, double v) {
+    const double abs_v = std::fabs(v);
+
+    // Very large values (e.g. DBL_MAX placeholders) are more readable in scientific notation.
+    if (std::isfinite(v) && abs_v >= 1e12) {
+        out << std::scientific << std::setprecision(17) << v;
+        return;
+    }
+
+    if (v == std::floor(v)) {
+        out << std::fixed << std::setprecision(1) << v;
+    } else {
+        out.unsetf(std::ios::floatfield);
+        out << std::setprecision(17) << v;
+    }
+}
+
+static std::string extract_string(const uint8_t* data, size_t len);
+
+// 解析时间字符串 "10:51:52.147" 或 "09:51:21"
+// 输出: updateTime = 105152, updateMillisec = 147
+// 如果没有毫秒部分，updateMillisec 为 0
+static void parse_update_time(const uint8_t* data, size_t len, int& updateTime, int& updateMillisec) {
+    std::string str = extract_string(data, len);
+
+    // 去掉空格
+    size_t pos = str.find(' ');
+    if (pos != std::string::npos) {
+        str = str.substr(pos + 1);
+    }
+
+    updateTime = 0;
+    updateMillisec = 0;
+
+    // 找小数点位置
+    size_t dot_pos = str.find('.');
+    std::string time_part;
+    std::string milli_part;
+
+    if (dot_pos != std::string::npos) {
+        time_part = str.substr(0, dot_pos);
+        milli_part = str.substr(dot_pos + 1);
+    } else {
+        time_part = str;
+    }
+
+    // 去掉冒号，拼接成数字
+    std::string time_num;
+    for (char c : time_part) {
+        if (c != ':') {
+            time_num += c;
+        }
+    }
+
+    if (!time_num.empty()) {
+        updateTime = std::atoi(time_num.c_str());
+    }
+
+    // 毫秒部分
+    if (!milli_part.empty()) {
+        // 取前3位作为毫秒
+        if (milli_part.length() >= 3) {
+            updateMillisec = std::atoi(milli_part.substr(0, 3).c_str());
+        } else {
+            updateMillisec = std::atoi(milli_part.c_str());
+        }
+    }
+}
 #include "common/print.h"
 #include "detector/packet_detector.h"
 #include "batch/batch_parser.h"
@@ -34,13 +106,39 @@ static std::string extract_string(const uint8_t* data, size_t len) {
     return result;
 }
 
-// 写入 CSV 头部
+static std::string extract_instrument_id(const uint8_t* data, size_t len) {
+    if (!data || len == 0) return std::string();
+
+    size_t i = 0;
+    while (i < len && data[i] != 0) ++i;
+    if (i >= len) return std::string();
+    ++i;
+
+    std::string result;
+    while (i < len) {
+        if (i + 2 < len && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 0) break;
+        if (data[i] >= 32 && data[i] <= 126) {
+            result += static_cast<char>(data[i]);
+        }
+        ++i;
+    }
+    return result;
+}
+
+// 写入 CSV 头部（按偏移量排序）
 static void write_csv_header(std::ostream& out, int max_price_num) {
-    out << "tradingDay,instrumentId,preClosePrice,preSettlementPrice,lastPrice,"
-        << "volume,turnover,preOpenInterest,openInterest,openPrice,"
-        << "highPrice,lowPrice,upperLimitPrice,lowerLimitPrice,closePrice,"
-        << "settlementPrice,actionDay,updateTime,updateMillisec,priceNum";
-    
+    out << "tradingDay,instrumentId,actionDay,"
+        << "lastPrice,highPrice,lowPrice,"
+        << "lastVolume,volume,turnover,"
+        << "preOpenInterest,openInterest,"
+        << "settlementPrice,upperLimitPrice,lowerLimitPrice,preSettlementPrice,preClosePrice,bidPrice,"
+        << "bidQty,bidImplyQty,"
+        << "askPrice,"
+        << "askQty,askImplyQty,"
+        << "avgPrice,"
+        << "openPrice,closePrice,"
+        << "updateTime,updateMillisec,priceNum";
+
     // 动态添加 price 列
     for (int i = 1; i <= max_price_num; ++i) {
         out << ",price" << i << ",value" << i << "A,value" << i << "B,direct" << i;
@@ -48,83 +146,88 @@ static void write_csv_header(std::ostream& out, int max_price_num) {
     out << "\n";
 }
 
-// 将 T31 数据写入 CSV 行
+// 将 T31 数据写入 CSV 行（按偏移量排序）
 static void write_csv_row(std::ostream& out, const types::T31& q) {
-    out << std::setprecision(17);
-    
-    // tradingDay (从 off_8_c80 提取)
-    out << extract_string(q.off_8_c80.data(), q.off_8_c80.size()) << ",";
-    
-    // instrumentId (从 off_8_c80 提取，这里假设和 tradingDay 相同，实际可能需要不同的偏移)
-    out << extract_string(q.off_8_c80.data(), q.off_8_c80.size()) << ",";
-    
-    // preClosePrice
-    out << q.off_140_d8[6] << ",";
-    
-    // preSettlementPrice
-    out << q.off_140_d8[5] << ",";
-    
-    // lastPrice
-    out << q.off_140_d8[7] << ",";
-    
-    // volume
-    out << q.off_128_i3[2] << ",";
-    
-    // turnover
-    out << q.off_120_d1 << ",";
-    
-    // preOpenInterest
+    const std::string trading_day = extract_string(q.off_8_c80.data(), q.off_8_c80.size());
+    const std::string instrument_id = extract_instrument_id(q.off_8_c80.data(), q.off_8_c80.size());
+    const std::string action_day = extract_string(q.off_8_c80.data(), q.off_8_c80.size());
+
+    // off_8_c80
+    out << trading_day << ",";
+    out << instrument_id << ",";
+    out << action_day << ",";
+
+    // off_88_d3: lastPrice, highPrice, lowPrice
+    write_float(out, q.off_88_d3[0]); out << ",";
+    write_float(out, q.off_88_d3[1]); out << ",";
+    write_float(out, q.off_88_d3[2]); out << ",";
+
+    // off_112_i2: lastVolume, volume
+    out << q.off_112_i2[0] << ",";
+    out << q.off_112_i2[1] << ",";
+
+    // off_120_d1: turnover
+    write_float(out, q.off_120_d1); out << ",";
+
+    // off_128_i3: preOpenInterest, openInterest
     out << q.off_128_i3[0] << ",";
-    
-    // openInterest
     out << q.off_128_i3[1] << ",";
-    
-    // openPrice
-    out << q.off_252_d2[0] << ",";
-    
-    // highPrice
-    out << q.off_88_d3[1] << ",";
-    
-    // lowPrice
-    out << q.off_88_d3[2] << ",";
-    
-    // upperLimitPrice
-    out << q.off_140_d8[3] << ",";
-    
-    // lowerLimitPrice
-    out << q.off_140_d8[4] << ",";
-    
-    // closePrice
-    out << q.off_140_d8[0] << ",";
-    
-    // settlementPrice
-    out << q.off_252_d2[1] << ",";
-    
-    // actionDay (从 off_8_c80 提取)
-    out << extract_string(q.off_8_c80.data(), q.off_8_c80.size()) << ",";
-    
-    // updateTime (从 off_236_c16 提取)
-    out << extract_string(q.off_236_c16.data(), q.off_236_c16.size()) << ",";
-    
-    // updateMillisec (从 off_236_c16 提取)
-    out << extract_string(q.off_236_c16.data(), q.off_236_c16.size()) << ",";
-    
-    // priceNum
+
+    // off_140_d8: settlementPrice, upperLimitPrice, lowerLimitPrice, preSettlementPrice, preClosePrice, bidPrice
+    write_float(out, q.off_140_d8[0]); out << ",";
+    write_float(out, q.off_140_d8[3]); out << ",";
+    write_float(out, q.off_140_d8[4]); out << ",";
+    write_float(out, q.off_140_d8[5]); out << ",";
+    write_float(out, q.off_140_d8[6]); out << ",";
+    write_float(out, q.off_140_d8[7]); out << ",";
+
+    // off_204_i2: bidQty, bidImplyQty
+    out << q.off_204_i2[0] << ",";
+    out << q.off_204_i2[1] << ",";
+
+    // off_212_d1: askPrice
+    write_float(out, q.off_212_d1); out << ",";
+
+    // off_220_i2: askQty, askImplyQty
+    out << q.off_220_i2[0] << ",";
+    out << q.off_220_i2[1] << ",";
+
+    // off_228_d1: avgPrice
+    write_float(out, q.off_228_d1); out << ",";
+
+    // off_252_d2: openPrice, closePrice
+    write_float(out, q.off_252_d2[0]); out << ",";
+    write_float(out, q.off_252_d2[1]); out << ",";
+
+    // off_236_c16: updateTime, updateMillisec
+    int updateTime = 0;
+    int updateMillisec = 0;
+    parse_update_time(q.off_236_c16.data(), q.off_236_c16.size(), updateTime, updateMillisec);
+    out << updateTime << "," << updateMillisec << ",";
+
+    // off_268_i1: priceNum
     int price_num = q.off_268_i1;
     out << price_num;
-    
-    // 动态输出 price 数据
+
+    // off_272_blocks: price1~10, value1A~10B, direct1~10
     int max_blocks = static_cast<int>(q.off_272_blocks.size());
-    if (price_num > max_blocks) price_num = max_blocks;
-    
-    for (int i = 0; i < price_num; ++i) {
-        const auto& block = q.off_272_blocks[i];
-        out << "," << block.d0;           // priceX
-        out << "," << block.i[0];         // valueXA
-        out << "," << block.i[1];         // valueXB
-        out << "," << block.i[2];         // directX
+    int actual_price_num = q.off_268_i1;
+    if (actual_price_num > max_blocks) actual_price_num = max_blocks;
+
+    for (int i = 0; i < 10; ++i) {
+        if (i < actual_price_num) {
+            const auto& block = q.off_272_blocks[i];
+            out << ",";
+            write_float(out, block.d0);        // priceX
+            out << "," << block.i[0];         // valueXA
+            out << "," << block.i[1];         // valueXB
+            out << "," << block.i[2];         // directX
+        } else {
+            // 不存在则填默认值
+            out << ",0.0,0,0,0";
+        }
     }
-    
+
     out << "\n";
 }
 
@@ -153,10 +256,9 @@ static int manual_mode(const char* input_file, const char* output_file) {
         return 3;
     }
 
-    // 写入 CSV
-    int max_price_num = q.off_268_i1;
-    if (max_price_num > 10) max_price_num = 10;
-    
+    // 写入 CSV，始终输出10档
+    int max_price_num = 10;
+
     write_csv_header(ofs, max_price_num);
     write_csv_row(ofs, q);
     
@@ -197,15 +299,8 @@ static int auto_mode(const char* input_file, const char* output_file) {
         return 3;
     }
 
-    // 找出最大的 priceNum
-    int max_price_num = 0;
-    for (const auto& res : results) {
-        if (res.success) {
-            int pn = res.t31_data.off_268_i1;
-            if (pn > max_price_num) max_price_num = pn;
-        }
-    }
-    if (max_price_num > 10) max_price_num = 10;
+    // 始终输出10档
+    int max_price_num = 10;
 
     // 写入 CSV 头部
     write_csv_header(ofs, max_price_num);
