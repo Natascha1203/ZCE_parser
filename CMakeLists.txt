@@ -9,8 +9,10 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 
 add_executable(cppParser
     src/main.cpp
+    src/t_printer.cpp
     src/parser.cpp
     src/t31_parser.cpp
+    src/t32_parser.cpp
     src/t36_parser.cpp
     src/detector/packet_detector.cpp
     src/batch/batch_parser.cpp

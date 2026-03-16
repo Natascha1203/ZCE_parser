@@ -11,6 +11,12 @@ const size_t T31Signature::PACKET_LEN;
 const uint8_t T31Signature::TAIL[4] = {0x0d, 0x0a, 0x00, 0x00};
 const size_t T31Signature::TAIL_OFFSET;
 
+const uint8_t T32Signature::HEADER[8] = {0x32, 0x00, 0x00, 0x00, 0x14, 0x02, 0x00, 0x00};
+const size_t T32Signature::HEADER_LEN;
+const size_t T32Signature::PACKET_LEN;
+const uint8_t T32Signature::TAIL[4] = {0x0d, 0x0a, 0x00, 0x00};
+const size_t T32Signature::TAIL_OFFSET;
+
 // 匹配字节序列
 static bool matchBytes(const uint8_t* data, const uint8_t* pattern, size_t len) {
     return std::memcmp(data, pattern, len) == 0;
@@ -35,6 +41,21 @@ bool validateT31Packet(const uint8_t* data, size_t len) {
         return false;
     }
 
+    return true;
+}
+
+bool validateT32Packet(const uint8_t* data, size_t len) {
+    if (len < T32Signature::PACKET_LEN) {
+        return false;
+    }
+    if (!matchBytes(data, T32Signature::HEADER, T32Signature::HEADER_LEN)) {
+        return false;
+    }
+    if (!matchBytes(data + T32Signature::TAIL_OFFSET,
+                    T32Signature::TAIL,
+                    sizeof(T32Signature::TAIL))) {
+        return false;
+    }
     return true;
 }
 
@@ -89,6 +110,36 @@ std::vector<PacketInfo> detectT31Packets(const uint8_t* data, size_t len) {
 
         // 步骤6: 跳过已识别的数据包
         pos += T31Signature::PACKET_LEN;
+    }
+
+    return results;
+}
+
+std::vector<PacketInfo> detectPackets(const uint8_t* data, size_t len) {
+    std::vector<PacketInfo> results;
+    if (!data || len < T32Signature::PACKET_LEN) {
+        return results;
+    }
+
+    size_t pos = 0;
+    while (pos + T32Signature::HEADER_LEN <= len) {
+        if (pos + T31Signature::PACKET_LEN <= len &&
+            data[pos] == T31Signature::HEADER[0] &&
+            validateT31Packet(data + pos, len - pos)) {
+            results.push_back(PacketInfo(pos, parser::MsgType::T31, T31Signature::PACKET_LEN));
+            pos += T31Signature::PACKET_LEN;
+            continue;
+        }
+
+        if (pos + T32Signature::PACKET_LEN <= len &&
+            data[pos] == T32Signature::HEADER[0] &&
+            validateT32Packet(data + pos, len - pos)) {
+            results.push_back(PacketInfo(pos, parser::MsgType::T32, T32Signature::PACKET_LEN));
+            pos += T32Signature::PACKET_LEN;
+            continue;
+        }
+
+        ++pos;
     }
 
     return results;
